@@ -1,0 +1,7 @@
+# folders to ignore
+data/
+logs/
+models/
+
+# python stuff
+**/__pycache__/
