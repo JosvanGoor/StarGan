@@ -2,96 +2,69 @@ import numpy as np
 from src.instancenormalization import InstanceNormalization
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras.layers import Input, Conv2D, Conv2DTranspose, LeakyReLU
+from tensorflow.keras.layers import Input, Conv2D, Conv2DTranspose, LeakyReLU, Add, Activation
 
-class Model:
+def conv_layer(input, filters, kernelsize = 4, stride = 2, padding = "same", activation = "relu", normalization = True):
+    layer = Conv2D(filters, kernel_size = kernelsize, strides = stride, padding = padding)(input)
     
-    def __init__(self, model_dir, log_dir, image_data, bottleneck_depth = 6, disc_hidden_depth = 5):
-        self.model_dir = model_dir
-        self.log_dir = log_dir
-        self.image_data = image_data
-        self.bottleneck_depth = bottleneck_depth
-        self.disc_hidden_depth = disc_hidden_depth
+    if normalization:
+        layer = InstanceNormalization()(layer)
+    
+    if activation == "relu":
+        return Activation("relu")(layer)
+    elif activation == "leakyrelu":
+        return LeakyReLU(0.01)(layer)
+    elif activation == "none":
+        return layer
+    else:
+        raise Exception("Unknown activation function: '{}'.".format(activation))
 
-        self.generator = None
-        self.generator_input = None
-        self.generator_output = None
-        self.discriminator = None
-        self.discriminator_input = None
-        self.discriminator_src_out = None
-        self.discriminator_cls_out = None
+def residual_layer(input, filters = 256, kernelsize = 3, stride = 1, padding = "same"):
+    layer = conv_layer(input, filters, kernelsize, stride, padding)
+    return Add()([layer, input])
 
-        self.build_generator()
-        self.build_discriminator()
+def deconv_layer(input, filters, kernelsize = 4, stride = 2, padding = "same"):
+    layer = Conv2DTranspose(filters, kernelsize, stride, padding)(input)
+    layer = InstanceNormalization()(layer)
+    return Activation("relu")(layer)
 
-    def build_generator(self):
-        #input layer
-        self.generator_input = Input(self.image_data.image_dim())
+def genout_layer(input):
+    layer = Conv2D(3, kernel_size = 7, strides = 1, padding = "same")(input)
+    return Activation('tanh', name = "generator_output")(layer)
 
-        # down-sampling layers
-        layers = Conv2D(64, kernel_size = 7, strides = 1, activation = "relu", padding = "same")(InstanceNormalization()(self.generator_input))
-        layers = Conv2D(128, kernel_size = 4, strides = 2, activation = "relu", padding = "same")(InstanceNormalization()(layers))
-        layers = Conv2D(256, kernel_size = 4, strides = 2, activation = "relu", padding = "same")(InstanceNormalization()(layers))
-        
-        # bottleneck layers
-        for _ in range(0, self.bottleneck_depth):
-            layers = Conv2D(256, kernel_size = 3, strides = 1, activation = "relu", padding = "same")(InstanceNormalization()(layers))
+def summarize(first, last):
+    keras.models.Model(first, last).summary()
 
-        # upsampling layers
-        layers = Conv2DTranspose(128, kernel_size = 4, strides = 2, activation = "relu", padding = "same")(InstanceNormalization()(layers))
-        layers = Conv2DTranspose(64, kernel_size = 4, strides = 2, activation = "relu", padding = "same")(InstanceNormalization()(layers))
-        self.generator_output = Conv2D(3, kernel_size = 7, strides = 1, activation = "tanh", padding = "same")(InstanceNormalization()(layers))
+def create_generator(imgsize, labelcount, bn_repeat = 6):
+    input_layer = Input((imgsize, imgsize, labelcount + 3,), name = "generator_input")
+    
+    # Down sampling part
+    layers = conv_layer(input_layer, 64, 7, 1)
+    layers = conv_layer(layers, 128, 4, 2)
+    layers = conv_layer(layers, 256, 4, 2)
 
-        self.generator = keras.models.Model \
-        (
-            inputs = self.generator_input,
-            outputs = self.generator_output,
-            name = "Generator"
-        )
+    # Bottleneck
+    for _ in range(bn_repeat):
+        layers = residual_layer(layers, 256, 3, 1)
 
-        self.generator.compile \
-        (
-            optimizer = "adam",
-            loss = "binary_crossentropy",
-            metrics = ["accuracy"]
-        )
-        print("\nGenerator:")
-        self.generator.summary()
+    # Up sampling layer
+    layers = deconv_layer(layers, 128, 4, 2)
+    layers = deconv_layer(layers, 64, 4, 2)
+    output_layer = genout_layer(layers)
 
-    def build_discriminator(self):
-        #input layer
-        self.discriminator_input = Input(self.image_data.disc_dim())
-        layers = Conv2D(64, kernel_size = 4, strides = 2, padding = "same")(self.discriminator_input)
-        layers = LeakyReLU(0.01)(layers)
+    return keras.models.Model(input_layer, output_layer, name = "generator")
 
-        # hidden layers
-        n_filters = 128
-        for _ in range(0, self.disc_hidden_depth):
-            layers = Conv2D(n_filters, kernel_size = 4, strides = 2, padding = "same")(layers)
-            layers = LeakyReLU(0.01)(layers)
-            n_filters *= 2
+def create_discriminator(imsize, labelcount, hl_repeat = 5):
+    input_layer = Input((imsize, imsize, 3,), name = "discriminator_input")
 
-        # output layers
-        self.discriminator_src_out = Conv2D(1, kernel_size = 3, strides = 1, padding = "same")(layers)
-        self.discriminator_cls_out = Conv2D \
-        (
-            self.image_data.num_classes(),
-            kernel_size = 
-            (
-                self.image_data.disc_dim()[0] // 64,
-                self.image_data.disc_dim()[1] // 64
-            ),
-            strides = 1,
-            padding = "valid"
-        )(layers)
+    layers = conv_layer(input_layer, 64, 4, 2, "same", "leakyrelu", False)
 
-        self.discriminator = keras.models.Model \
-        (
-            inputs = self.discriminator_input,
-            outputs = [self.discriminator_src_out, self.discriminator_cls_out],
-            name = "Discriminator"
-        )
+    numfilters = 128
+    for _ in range(hl_repeat):
+        layers = conv_layer(layers, numfilters, 4, 2, "same", "leakyrelu", False)
+        numfilters *= 2
 
-        print("\nDiscriminator:")
-        self.discriminator.summary()
+    output_layer_isreal = Conv2D(1, 3, 1, "same", name = "output_isreal")(layers)
+    output_layer_labels = Conv2D(labelcount, imsize // 64, 1, "valid", name = "output_labels")(layers)
 
+    return keras.models.Model(input_layer, [output_layer_isreal, output_layer_labels], name = "discriminator")

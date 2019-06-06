@@ -1,93 +1,92 @@
 import csv
 import numpy as np
 from random import shuffle
+from tqdm import tqdm
+from math import floor
+
+POSSIBLE_HAIR_COLORS = ["Black_Hair", "Blond_Hair", "Brown_Hair", "Gray_Hair"]
 
 class ImageData:
 
     def __init__ \
     (
         self,
-        img_dir,
-        attr_file,
+        image_dir,
+        attribute_file,
         image_size,
         batch_size,
-        selected_attrs = ["Black_Hair", "Blond_Hair", "Brown_Hair", "Male", "Young"],
+        selected_attributes = ["Black_Hair", "Blond_Hair", "Brown_Hair", "Male", "Young"],
         validation_ratio = 0.1
     ):
-        self.img_dir = img_dir
-        self.attr_file = attr_file
+        self.image_dir = image_dir
+        self.attribute_file = attribute_file
         self.image_size = image_size
         self.batch_size = batch_size
-        self.selected_attrs = selected_attrs
+        self.selected_attributes = selected_attributes
         self.validation_ratio = validation_ratio
 
-        # stores conversion between attributes idx <-> string.
-        self.attr_indices = {}
-        self.all_attrs = []
-
-        # data sets [img_name, [labels (0/1)]]
-        self.train_set = []
+        self.attribute_indices = {}
+        self.all_attributes = []
+        
+        # [filename, selected_labels, all_labels]
         self.validation_set = []
-        self.prepare_labels()
+        self.train_set = []
 
-    # returns number of batches in the set
-    def __len__(self):
-        return len(self.train_set) // self.batch_size
+    '''
+        Methods for accessing image data
+    '''
 
-    # returns a batch
-    def __getitem__(self, idx):
-        if type(idx) != int:
-            raise("index operator expects integer")
+    def trainbatch_count(self):
+        return floor(len(self.train_set) / self.batch_size)
 
+    def get_train_batch(self, index):
         return self.train_set \
-        [
-            idx * self.batch_size : (idx + 1) * self.batch_size
-        ]
+            [
+                index * self.batch_size
+                : (index + 1) * self.batch_size
+            ]
 
-    def image_dim(self):
-        return (self.image_size[0], self.image_size[1], 3 + len(self.selected_attrs))
-
-    def disc_dim(self):
-        return (self.image_size[0], self.image_size[1], 3)
-
-    def num_classes(self):
-        return len(self.selected_attrs)
-
-    # Reads labels from the attribute file.
-    # Then generates the train / validation split 
-    def prepare_labels(self):
+    '''
+        Initializes the inner state.
+    '''
+    def read_attribute_file(self):
         rows = []
-        with open(self.attr_file, "r") as file:
+        with open(self.attribute_file, "r") as file:
             reader = csv.reader(file)
 
-            # reads header line first, generate indices etc..
-            self.prepare_attr_info(reader.__next__())
+            self.prepare_labels(reader.__next__())
 
-            for row in reader:
-                # convert strings to numbers
+            for row in tqdm(reader, desc = "Reading label data"):
                 labels = []
                 for idx in range(1, len(row)):
-                    labels.append(1 if row[idx] == "1" else -1)
-                rows.append([row[0], labels])
+                    labels.append(1 if row[idx] == "1" else 0)
+                rows.append([row[0], self.selected_labels(labels), labels])
 
-        # validation is 0.1 total data
-        shuffle(rows)
+        # split between test and validation
+        # shuffle(rows)
         pivot = int(self.validation_ratio * len(rows))
         self.validation_set = rows[:pivot]
         self.train_set = rows[pivot:]
 
-        if len(self.selected_attrs) == 0:
-            self.selected_attrs = self.all_attrs
+        if (len(self.selected_attributes) == 0):
+            self.selected_attributes = ["Black_Hair", "Blond_Hair", "Brown_Hair", "Male", "Young"]
 
-    # generates attribute conversion structures.
-    # Also validates selected labels
-    def prepare_attr_info(self, attributes):
-        attributes = attributes[1:]
+    def selected_labels(self, labelset):
+        labels = []
 
-        for idx, attr in enumerate(attributes):
-            self.attr_indices[attr] = idx
-            self.all_attrs.append(attr)
+        # we assume here that the original labels only have 1 hair color selected always
+        for label in self.selected_attributes:
+            label_index = self.attribute_indices[label]
+            labels.append(labelset[label_index])
         
-        for attr in self.selected_attrs:
-            if not attr in self.attr_indices:
-                raise Exception("Unknown label: {}".format(attr))
+        return labels
+
+    def prepare_labels(self, attributes):
+        self.all_attributes = attributes[1:]
+
+        for idx, attr in enumerate(self.all_attributes):
+            self.attribute_indices[attr] = idx
+            
+        for attr in self.selected_attributes:
+            if not attr in self.attribute_indices:
+                raise Exception("Unknown label: '{}'".format(attr))
