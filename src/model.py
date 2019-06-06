@@ -32,9 +32,6 @@ def genout_layer(input):
     layer = Conv2D(3, kernel_size = 7, strides = 1, padding = "same")(input)
     return Activation('tanh', name = "generator_output")(layer)
 
-def summarize(first, last):
-    keras.models.Model(first, last).summary()
-
 def create_generator(imgsize, labelcount, bn_repeat = 6):
     input_layer = Input((imgsize, imgsize, labelcount + 3,), name = "generator_input")
     

@@ -32,10 +32,12 @@ class ImageData:
         self.validation_set = []
         self.train_set = []
 
+        # initialize inner state
+        self.read_attribute_file()
+
     '''
         Methods for accessing image data
     '''
-
     def trainbatch_count(self):
         return floor(len(self.train_set) / self.batch_size)
 

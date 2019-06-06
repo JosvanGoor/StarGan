@@ -9,7 +9,8 @@ def read_image(folder, filename, size):
         image = cv2.resize(image, (128, 128))
         print("Resizing image!")
 
-    return image
+    # return image / 127.5 - 1
+    return image / 255.0
 
 def generate_label_layers(labels, imsize):
     layers = np.tile(np.array([[labels[0]]]), (imsize, imsize, 1))
