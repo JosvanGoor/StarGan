@@ -1,9 +1,24 @@
 import os
+import src.utility as utility
 from src.imagedata import ImageData
 from src.model import create_generator, create_discriminator
+import tensorflow as tf
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.layers import Input, Concatenate
 from tensorflow.keras.models import Model
+from tqdm import trange
+import numpy as np
+from io import BytesIO
+import matplotlib.pyplot as plt
+
+def write_log(callback, names, logs, batch_no):
+    for name, value in zip(names, logs):
+        summary = tf.Summary()
+        summary_value = summary.value.add()
+        summary_value.simple_value = value
+        summary_value.tag = name
+        callback.writer.add_summary(summary, batch_no)
+        callback.writer.flush()
 
 class Network:
 
@@ -34,6 +49,7 @@ class Network:
         self.augment_flag = arguments.augment_flag
         self.image_size = arguments.img_size
         self.selected_attributes = arguments.selected_attrs
+        self.batch_size = arguments.batch_size
 
         self.checkpoint_dir = arguments.checkpoint_dir
         self.result_dir = arguments.result_dir
@@ -76,5 +92,118 @@ class Network:
             outputs = [reconstructed_image, output_src, output_cls],
             name = "combined model"
         )
+
+        self.combined_model.compile \
+        (
+            loss = ["mae", "mse", "mse"],
+            loss_weights = [10, 1, 10],
+            optimizer = self.gen_optimizer
+        )
+
+        # Train discriminator bit
+        self.discriminator.trainable = True
+        shape = (self.image_size, self.image_size, 3)
+        fake_input, real_input, interpolation = Input(shape), Input(shape), Input(shape)
+        # norm = utility.GradNorm()([self.discriminator(interpolation)[0], interpolation])
+        fake_output_src, fake_output_cls = self.discriminator(fake_input)
+        real_output_src, real_output_cls = self.discriminator(real_input)
+        self.discriminator_model = Model([real_input, fake_input], [fake_output_src, real_output_src, real_output_cls])
         
+        self.discriminator_model.compile(loss=["mse", "mse", "mse"], loss_weights = [1, 1, 10], optimizer= self.dis_optimizer)
+        
+        print("Discriminator model:")
+        self.discriminator_model.summary()
+        print("Combined model:")
         self.combined_model.summary()
+
+    def train(self):
+        tbcallback = tf.keras.callbacks.TensorBoard(log_dir = self.log_dir, write_graph = False)
+        tbcallback.set_model(self.combined_model)
+
+        dis_names = ['Discriminator Adversarial loss', 'Discriminator Classification loss', 'Gradient Penalty']
+        gen_names = ['Cycle loss', 'Generator Adversarial loss', 'Generator Classification loss']
+        
+        batch_iterator = iter(self.image_data)
+        batch_idx = 0
+        log_delay = 50
+
+        with tf.keras.backend.get_session().as_default():
+            for epoch in trange(self.epochs, desc = "Epochs"):
+                for _ in trange(self.iterations // log_delay, desc = "Iterations"):
+                    try:
+                        train_images, train_labels, fake_labels = next(batch_iterator)
+                    except:
+                        batch_iterator = iter(self.image_data)
+                        train_images, train_labels, fake_labels = next(batch_iterator)
+
+                    # Tensorboard data
+                    image = train_images[0]
+                    labels = utility.generate_label_layers(fake_labels[0], self.image_size)
+                    combined = np.append(image, labels, axis = 2)
+                    gen_out = self.generator.predict(np.reshape(combined, (1, 128, 128, 8)))
+
+                    cycle_in = np.reshape(gen_out, (128, 128, 3))
+                    cycle_in = np.append(cycle_in, utility.generate_label_layers(train_labels[0], self.image_size), axis = 2)
+                    cycle_in = np.reshape(cycle_in, (1, 128, 128, 8))
+                    cycled = self.generator.predict(cycle_in)
+
+                    buf = BytesIO()
+                    image_out = np.concatenate \
+                    (
+                        ( image, gen_out.reshape((128, 128, 3)), cycled.reshape((128, 128, 3))),
+                        axis = 1
+                    )
+                    image_out = utility.normalize_image(image_out)
+                    plt.imsave(buf, image_out)
+                    images = tf.Summary.Image(encoded_image_string = buf.getvalue())
+
+                    lbl_img = utility.label_image(train_labels[0], self.image_size)
+                    fake_img = utility.label_image(fake_labels[0], self.image_size)
+                    labels_image = np.concatenate((lbl_img, fake_img), axis = 0)
+                    
+                    buf = BytesIO()
+                    plt.imsave(buf, labels_image)
+                    labels_image = tf.Summary.Image(encoded_image_string = buf.getvalue())
+
+                    summary = tf.Summary(value = [tf.Summary.Value(tag = "in -> out -> cycled", image = images),
+                                                tf.Summary.Value(tag = "labels (real / fake)", image = labels_image)])
+                    tbcallback.writer.add_summary(summary, epoch)
+                    tbcallback.writer.flush()
+
+                    for _ in trange(0, log_delay):
+                        
+                        # 0 - critics
+                        for _ in trange(0, 5):
+                            try:
+                                train_images, train_labels, fake_labels = next(batch_iterator)
+                            except:
+                                batch_iterator = iter(self.image_data)
+                                train_images, train_labels, fake_labels = next(batch_iterator)
+                            batch_idx += 1
+
+                            fake_labels = utility.generate_batch_labels(fake_labels, self.image_size)
+                            in_combined = np.append(train_images, fake_labels, axis = 3)
+                            fake = self.generator.predict(in_combined)
+                            
+                            fake_src = np.zeros((self.batch_size, 2, 2, 1))
+                            real_src = np.ones((self.batch_size, 2, 2, 1))
+
+                            d_logs = self.discriminator_model.train_on_batch \
+                            (
+                                [train_images, fake],
+                                [fake_src, real_src, train_labels]
+                            )
+
+                        tiled_original_labels = utility.generate_batch_labels(train_labels, self.image_size)
+                        tiled_target_labels = fake_labels
+                        g_logs = self.combined_model.train_on_batch \
+                        (
+                            [train_images, tiled_original_labels, tiled_target_labels],
+                            [train_images, real_src, train_labels]
+                        )
+
+                        write_log(tbcallback, gen_names, g_logs[1:4], batch_idx)
+                        write_log(tbcallback, dis_names, [d_logs[1]+d_logs[2]] +d_logs[3:5], batch_idx)
+
+
+

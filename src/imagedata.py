@@ -3,6 +3,8 @@ import numpy as np
 from random import shuffle
 from tqdm import tqdm
 from math import floor
+from src.utility import read_image
+from random import randint
 
 POSSIBLE_HAIR_COLORS = ["Black_Hair", "Blond_Hair", "Brown_Hair", "Gray_Hair"]
 
@@ -27,13 +29,33 @@ class ImageData:
 
         self.attribute_indices = {}
         self.all_attributes = []
+        self.hair_indices = []
         
-        # [filename, selected_labels, all_labels]
+        # [ [filename, selected_labels, all_labels] ... ]
         self.validation_set = []
         self.train_set = []
 
         # initialize inner state
         self.read_attribute_file()
+
+    '''
+        Iterator methods
+    '''
+    def __len__(self):
+        return self.trainbatch_count()
+
+    def __getitem__(self, index):
+        data = self.get_train_batch(index)
+
+        images = []
+        labels = []
+        targets = []
+        for entry in data:
+            images.append(read_image(self.image_dir, entry[0], self.image_size))
+            labels.append(entry[1])
+            targets.append(self.fake_labels())
+
+        return np.asarray(images), np.asarray(labels), np.asarray(targets)
 
     '''
         Methods for accessing image data
@@ -42,11 +64,15 @@ class ImageData:
         return floor(len(self.train_set) / self.batch_size)
 
     def get_train_batch(self, index):
-        return self.train_set \
+        return np.asarray(self.train_set \
             [
                 index * self.batch_size
                 : (index + 1) * self.batch_size
-            ]
+            ])
+
+    def fake_labels(self):
+        # just return the labels of a random entry
+        return self.train_set[randint(0, len(self.train_set))][1]
 
     '''
         Initializes the inner state.
@@ -89,6 +115,9 @@ class ImageData:
         for idx, attr in enumerate(self.all_attributes):
             self.attribute_indices[attr] = idx
             
-        for attr in self.selected_attributes:
+        for idx, attr in enumerate(self.selected_attributes):
             if not attr in self.attribute_indices:
                 raise Exception("Unknown label: '{}'".format(attr))
+
+            if attr in POSSIBLE_HAIR_COLORS:
+                self.hair_indices.append(idx)
