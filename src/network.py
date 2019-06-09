@@ -251,12 +251,12 @@ class Network:
                         labels_image = tf.Summary.Image(encoded_image_string = buf.getvalue())
 
                         summary = tf.Summary(value = [tf.Summary.Value(tag = "in -> out -> cycled", image = images),
-                                                    tf.Summary.Value(tag = "labels (top = real / bottom = fake)", image = labels_image)])
+                                                    tf.Summary.Value(tag = "labels (top = real, bottom = fake): {}".format(self.selected_attributes), image = labels_image)])
                         tbcallback.writer.add_summary(summary, (epoch * self.iterations) + step)
                         tbcallback.writer.flush()
                         
                     # 0 - critics
-                    for _ in trange(0, 5):
+                    for _ in range(0, 5):
                         try:
                             train_images, train_labels, fake_labels = next(batch_iterator)
                         except:
@@ -276,7 +276,7 @@ class Network:
                         d_logs = self.discriminator_model.train_on_batch \
                         (
                             [train_images, fake, interpolation],
-                            [fake_src, real_src, train_labels, np.ones(self.batch_size)]
+                            [fake_src, real_src, fake_labels, np.ones(self.batch_size)]
                         )
 
                     tiled_original_labels = utility.generate_batch_labels(train_labels, self.image_size)

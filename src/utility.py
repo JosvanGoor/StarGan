@@ -5,6 +5,7 @@ import tensorflow as tf
 import tensorflow.keras.backend as backend
 from tensorflow.python.keras.layers import Layer
 import matplotlib.pylab as plt
+from random import randint
 
 def normalize_image(image):
     return (image - image.min()) / np.ptp(image)
@@ -19,8 +20,10 @@ def read_image(folder, filename, size):
         image = cv2.resize(image, (128, 128))
         print("Resizing image!")
 
-    return image / 127.5 - 1
-    # return image / 255.0
+    if randint(0, 1) == 1:
+        return image / 127.5 - 1
+    else:
+        return np.fliplr(image / 127.5 - 1)
 
 def red_image(imsize):
     image = np.zeros((imsize, imsize, 3))

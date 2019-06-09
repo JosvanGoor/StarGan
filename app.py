@@ -1,16 +1,17 @@
 import argparse
 import os
 from src.network import Network
+from src.imagedata import ImageData
 
 """parsing and configuration"""
-if __name__ == "__main__":
+if __name__ == "__main_2_":
     desc = "Tensorflow implementation of StarGAN"
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('--phase', type=str, default='train', help='train or test ?')
     parser.add_argument('--dataset', type=str, default='data', help='dataset_name')
 
-    parser.add_argument('--epoch', type=int, default=20, help='The number of epochs to run')
-    parser.add_argument('--iteration', type=int, default=10000, help='The number of training iterations')
+    parser.add_argument('--epoch', type=int, default=200, help='The number of epochs to run')
+    parser.add_argument('--iteration', type=int, default=1000, help='The number of training iterations')
     parser.add_argument('--batch_size', type=int, default=16, help='The size of batch size')
     parser.add_argument('--print_freq', type=int, default=1000, help='The number of image_print_freq')
     parser.add_argument('--save_freq', type=int, default=1000, help='The number of ckpt_save_freq')
@@ -74,3 +75,5 @@ if __name__ == "__main__":
         network.restore_network(arguments.restore_epoch)
 
     network.train()
+
+imgd = ImageData("data/", "data/list_attr_celeba.csv", 128, 16)
