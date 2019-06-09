@@ -1,5 +1,5 @@
 import tensorflow as tf
-import tensorflow.keras as keras
+import keras as keras
 
 def wasserstein_loss(y_true, y_pred):
         """Calculates the Wasserstein loss for a sample batch.

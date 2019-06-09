@@ -78,6 +78,7 @@ class Network:
         self.log_dir = arguments.log_dir
         self.sample_dir = arguments.sample_dir
         self.starter_epoch = 0
+        self.log_delay = 25
 
         self.model_foldername = "checkpoint_epoch_{}"
         self.weights_file = "weights.h5"
@@ -144,8 +145,8 @@ class Network:
             self.discriminatorblocks
         )
 
-        self.gen_optimizer = Adam(lr = self.learning_rate, beta_1 = 0.99, beta_2 = 0.99)
-        self.dis_optimizer = Adam(lr = self.learning_rate, beta_1 = 0.9, beta_2 = 0.99)
+        self.gen_optimizer = Adam(lr = self.learning_rate, beta_1 = 0.5, beta_2 = 0.99)
+        self.dis_optimizer = Adam(lr = self.learning_rate, beta_1 = 0.5, beta_2 = 0.99)
 
         self.discriminator.trainable = False
 
@@ -207,7 +208,6 @@ class Network:
         
         batch_iterator = iter(self.image_data)
         batch_idx = 0
-        log_delay = 50
 
         with tf.keras.backend.get_session().as_default():
             print("Starting at epoch {} / {}".format(self.starter_epoch, self.epochs))
@@ -218,7 +218,7 @@ class Network:
 
                 for step in trange(self.iterations, desc = "Iterations"):
                     # Output tensorflow image
-                    if step % log_delay == 0:
+                    if step % self.log_delay == 0:
                         curstep = (self.iterations * epoch) + step
                         train_images, train_labels, fake_labels = self.image_data.get_validation_image()
 
