@@ -4,7 +4,7 @@ from src.network import Network
 from src.imagedata import ImageData
 
 """parsing and configuration"""
-if __name__ == "__main_2_":
+if __name__ == "__main__":
     desc = "Tensorflow implementation of StarGAN"
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('--phase', type=str, default='train', help='train or test ?')
@@ -76,4 +76,4 @@ if __name__ == "__main_2_":
 
     network.train()
 
-imgd = ImageData("data/", "data/list_attr_celeba.csv", 128, 16)
+# imgd = ImageData("data/", "data/list_attr_celeba.csv", 128, 16)
