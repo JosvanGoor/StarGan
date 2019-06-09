@@ -40,6 +40,8 @@ if __name__ == "__main__":
     parser.add_argument('--img_ch', type=int, default=3, help='The size of image channel')
     parser.add_argument('--augment_flag', type=lambda x: x.lower() == "true", default=True, help='Image augmentation use or not')
 
+    parser.add_argument("--restore_epoch", type=int, default = -1, help = "Epoch to restore from")
+
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoint',
                         help='Directory name to save the checkpoints')
     parser.add_argument('--result_dir', type=str, default='results',
@@ -62,8 +64,13 @@ if __name__ == "__main__":
         os.makedirs(arguments.sample_dir)
     if not os.path.exists(arguments.result_dir):
         os.makedirs(arguments.result_dir)
+    if not os.path.exists(arguments.checkpoint_dir):
+        os.makedirs(arguments.checkpoint_dir)
 
     network = Network(arguments)
     network.build()
+
+    if not arguments.restore_epoch == -1:
+        network.restore_network(arguments.restore_epoch)
 
     network.train()
