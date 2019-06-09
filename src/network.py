@@ -276,7 +276,7 @@ class Network:
                         d_logs = self.discriminator_model.train_on_batch \
                         (
                             [train_images, fake, interpolation],
-                            [fake_src, real_src, fake_labels, np.ones(self.batch_size)]
+                            [fake_src, real_src, train_labels, np.ones(self.batch_size)]
                         )
 
                     tiled_original_labels = utility.generate_batch_labels(train_labels, self.image_size)
@@ -284,7 +284,7 @@ class Network:
                     g_logs = self.combined_model.train_on_batch \
                     (
                         [train_images, tiled_original_labels, tiled_target_labels],
-                        [train_images, real_src, train_labels]
+                        [train_images, real_src, fake_labels]
                     )
 
                     write_log(tbcallback, gen_names, g_logs[1:4], batch_idx)
