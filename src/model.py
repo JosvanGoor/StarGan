@@ -1,8 +1,7 @@
 import numpy as np
 from src.instancenormalization import InstanceNormalization
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras.layers import Input, Conv2D, Conv2DTranspose, LeakyReLU, Add, Activation
+from keras.layers import Input, Conv2D, Conv2DTranspose, LeakyReLU, Add, Activation
+import keras
 
 def conv_layer(input, filters, kernelsize = 4, stride = 2, padding = "same", activation = "relu", normalization = True):
     layer = Conv2D(filters, kernel_size = kernelsize, strides = stride, padding = padding)(input)
@@ -24,7 +23,7 @@ def residual_layer(input, filters = 256, kernelsize = 3, stride = 1, padding = "
     return Add()([layer, input])
 
 def deconv_layer(input, filters, kernelsize = 4, stride = 2, padding = "same"):
-    layer = Conv2DTranspose(filters, kernelsize, stride, padding)(input)
+    layer = Conv2DTranspose(filters, kernel_size = kernelsize, strides = stride, padding = padding)(input)
     layer = InstanceNormalization()(layer)
     return Activation("relu")(layer)
 
@@ -61,7 +60,7 @@ def create_discriminator(imsize, labelcount, hl_repeat = 5):
         layers = conv_layer(layers, numfilters, 4, 2, "same", "leakyrelu", False)
         numfilters *= 2
 
-    output_layer_isreal = Conv2D(1, 3, 1, "same", name = "output_isreal")(layers)
-    output_layer_labels = Conv2D(labelcount, imsize // 64, 1, "valid", name = "output_labels")(layers)
+    output_layer_isreal = Conv2D(1, kernel_size = 3, strides = 1, padding = "same", name = "output_isreal")(layers)
+    output_layer_labels = Conv2D(labelcount, kernel_size = imsize // 64, strides = 1, padding = "valid", name = "output_labels")(layers)
 
     return keras.models.Model(input_layer, [output_layer_isreal, output_layer_labels], name = "discriminator")

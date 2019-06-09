@@ -70,6 +70,13 @@ class ImageData:
                 : (index + 1) * self.batch_size
             ])
 
+    def validation_count(self):
+        return len(self.validation_set)
+
+    def get_validation_image(self):
+        index = randint(0, len(self.validation_set))
+        return read_image(self.image_dir, self.validation_set[index][0], 128), self.validation_set[index][1], self.fake_labels()
+
     def fake_labels(self):
         # just return the labels of a random entry
         return self.train_set[randint(0, len(self.train_set))][1]

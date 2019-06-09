@@ -8,9 +8,6 @@ https://github.com/taki0112/StarGAN-Tensorflow
 
 # Todo:
 * Implement loss functions
-* Layers:
+* Labels:
     * Check wether they place correctly
-    * adapt label image tensorboard output to be more clear
 * Simplify build_model function
-* Simplify learn function
-* Validate on validation set

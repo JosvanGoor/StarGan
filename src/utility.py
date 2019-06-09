@@ -3,7 +3,7 @@ import os
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras.backend as backend
-from tensorflow.keras.layers import Layer
+from tensorflow.python.keras.layers import Layer
 import matplotlib.pylab as plt
 
 def normalize_image(image):
@@ -22,11 +22,21 @@ def read_image(folder, filename, size):
     return image / 127.5 - 1
     # return image / 255.0
 
+def red_image(imsize):
+    image = np.zeros((imsize, imsize, 3))
+    image[:] = (1.0, 0, 0)
+    return image
+
+def green_image(imsize):
+    image = np.zeros((imsize, imsize, 3))
+    image[:] = (0, 1.0, 0)
+    return image
+
 def label_image(labels, imsize):
-    image = np.tile([[labels[0]]], (imsize, imsize))
+    image = red_image(imsize) if labels[0] == 0 else green_image(imsize)
 
     for idx in range(1, len(labels)):
-        bolt = np.tile([[labels[idx]]], (imsize, imsize))
+        bolt = red_image(imsize) if labels[idx] == 0 else green_image(imsize)
         image = np.concatenate((image, bolt), axis = 1)
 
     return image
@@ -52,21 +62,3 @@ def show_image(image):
     cv2.imshow("image", image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-
-class GradNorm(Layer):
-    def __init__(self, **kwargs):
-        super(GradNorm, self).__init__(**kwargs)
-
-    def build(self, input_shapes):
-        super(GradNorm, self).build(input_shapes)
-
-    def call(self, inputs):
-        target, wrt = inputs
-        grads = backend.gradients(target, wrt)
-        assert len(grads) == 1
-        grad = grads[0]
-        grad_norm = tf.norm(tf.layers.flatten(grad))
-        return grad_norm
-
-    def compute_output_shape(self, input_shapes):
-        return (input_shapes[1][0], 1)

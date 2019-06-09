@@ -1,16 +1,19 @@
+import json
 import os
 import src.utility as utility
 from src.imagedata import ImageData
 from src.model import create_generator, create_discriminator
 import tensorflow as tf
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.layers import Input, Concatenate
-from tensorflow.keras.models import Model
+from keras.optimizers import Adam
+from keras.layers import Input, Concatenate
+from keras.models import Model
+from keras.engine.topology import Layer
 from tqdm import trange
 import numpy as np
 from io import BytesIO
 import matplotlib.pyplot as plt
 import pickle
+import src.loss as loss
 
 def write_log(callback, names, logs, batch_no):
     for name, value in zip(names, logs):
@@ -20,6 +23,24 @@ def write_log(callback, names, logs, batch_no):
         summary_value.tag = name
         callback.writer.add_summary(summary, batch_no)
         callback.writer.flush()
+
+class GradNorm(Layer):
+    def __init__(self, **kwargs):
+        super(GradNorm, self).__init__(**kwargs)
+
+    def build(self, input_shapes):
+        super(GradNorm, self).build(input_shapes)
+
+    def call(self, inputs):
+        target, wrt = inputs
+        grads = tf.keras.backend.gradients(target, wrt)
+        assert len(grads) == 1
+        grad = grads[0]
+        grad_norm = tf.norm(tf.layers.flatten(grad))
+        return grad_norm
+
+    def compute_output_shape(self, input_shapes):
+        return (input_shapes[1][0], 1)
 
 class Network:
 
@@ -56,11 +77,14 @@ class Network:
         self.result_dir = arguments.result_dir
         self.log_dir = arguments.log_dir
         self.sample_dir = arguments.sample_dir
+        self.starter_epoch = 0
 
         self.model_foldername = "checkpoint_epoch_{}"
         self.weights_file = "weights.h5"
         self.combined_sym_file = "combined_sym.pkl"
         self.discriminator_sym_file = "discriminator_sym.pkl"
+
+        print("batch_size: {}".format(self.batch_size))
 
     '''
         Store / restore the model
@@ -72,31 +96,34 @@ class Network:
         # store model weights
         self.combined_model.save_weights(os.path.join(folder, self.weights_file))
 
-        # store combined symbolic weights
+        # store combined optimizer
         with open(os.path.join(folder, self.combined_sym_file), "wb") as file:
             symw = getattr(self.combined_model.optimizer, "weights")
             values = tf.keras.backend.batch_get_value(symw)
             pickle.dump(values, file)
 
-        # store combined discriminator weights
+        # store combined optimizer
         with open(os.path.join(folder, self.discriminator_sym_file), "wb") as file:
-            symw = getattr(self.discriminator_model, "weights")
+            symw = getattr(self.discriminator_model.optimizer, "weights")
             values = tf.keras.backend.batch_get_value(symw)
             pickle.dump(values, file)
 
     def restore_network(self, epoch):
         folder = os.path.join(self.checkpoint_dir, self.model_foldername.format(epoch))
 
+        self.starter_epoch = epoch
         self.combined_model.load_weights(os.path.join(folder, self.weights_file))
 
         # load combined sym weights
         with open(os.path.join(folder, self.combined_sym_file), "rb") as file:
             values = pickle.load(file)
+            self.combined_model._make_train_function()
             self.combined_model.optimizer.set_weights(values)
 
         # load discriminator sym weights
         with open(os.path.join(folder, self.discriminator_sym_file), "rb") as file:
             values = pickle.load(file)
+            self.discriminator_model._make_train_function()
             self.discriminator_model.optimizer.set_weights(values)
 
     '''
@@ -139,10 +166,13 @@ class Network:
             name = "combined model"
         )
 
+        print("Combined model:")
+        self.combined_model.summary()
+
         self.combined_model.compile \
         (
-            loss = ["mae", "mse", "mse"],
-            loss_weights = [10, 1, 10],
+            loss = ["mae", loss.negative_mean_loss, loss.classification_loss],
+            loss_weights = [self.reconstruction_weight, self.classification_weight, self.adverserial_weight],
             optimizer = self.gen_optimizer
         )
 
@@ -150,17 +180,20 @@ class Network:
         self.discriminator.trainable = True
         shape = (self.image_size, self.image_size, 3)
         fake_input, real_input, interpolation = Input(shape), Input(shape), Input(shape)
-        # norm = utility.GradNorm()([self.discriminator(interpolation)[0], interpolation])
+        norm = GradNorm()([self.discriminator(interpolation)[0], interpolation])
         fake_output_src, fake_output_cls = self.discriminator(fake_input)
         real_output_src, real_output_cls = self.discriminator(real_input)
-        self.discriminator_model = Model([real_input, fake_input], [fake_output_src, real_output_src, real_output_cls])
-        
-        self.discriminator_model.compile(loss=["mse", "mse", "mse"], loss_weights = [1, 1, 10], optimizer= self.dis_optimizer)
+        self.discriminator_model = Model([real_input, fake_input, interpolation], [fake_output_src, real_output_src, real_output_cls, norm])
         
         print("Discriminator model:")
         self.discriminator_model.summary()
-        print("Combined model:")
-        self.combined_model.summary()
+        
+        self.discriminator_model.compile \
+        (
+            loss=[loss.mean_loss, loss.negative_mean_loss, loss.classification_loss, "mse"],
+            loss_weights = [1, 1, self.classification_weight, self.gradient_penalty],
+            optimizer= self.dis_optimizer
+        )
     
     '''
         Train the model
@@ -177,27 +210,25 @@ class Network:
         log_delay = 50
 
         with tf.keras.backend.get_session().as_default():
-            for epoch in trange(0, self.epochs, desc = "Epochs"):
+            print("Starting at epoch {} / {}".format(self.starter_epoch, self.epochs))
+            for epoch in trange(self.starter_epoch, self.epochs, desc = "Epochs"):
                 # Store once per epoch
-                if not epoch == 0:
-                    self.store_network(self.model_foldername.format(epoch))
+                if not epoch == 0 or not self.starter_epoch == epoch:
+                    self.store_network(epoch)
 
                 for step in trange(self.iterations, desc = "Iterations"):
                     # Output tensorflow image
                     if step % log_delay == 0:
-                        try:
-                            train_images, train_labels, fake_labels = next(batch_iterator)
-                        except:
-                            batch_iterator = iter(self.image_data)
-                            train_images, train_labels, fake_labels = next(batch_iterator)
+                        curstep = (self.iterations * epoch) + step
+                        train_images, train_labels, fake_labels = self.image_data.get_validation_image()
 
-                        image = train_images[0]
-                        labels = utility.generate_label_layers(fake_labels[0], self.image_size)
+                        image = train_images
+                        labels = utility.generate_label_layers(fake_labels, self.image_size)
                         combined = np.append(image, labels, axis = 2)
                         gen_out = self.generator.predict(np.reshape(combined, (1, 128, 128, 8)))
 
                         cycle_in = np.reshape(gen_out, (128, 128, 3))
-                        cycle_in = np.append(cycle_in, utility.generate_label_layers(train_labels[0], self.image_size), axis = 2)
+                        cycle_in = np.append(cycle_in, utility.generate_label_layers(train_labels, self.image_size), axis = 2)
                         cycle_in = np.reshape(cycle_in, (1, 128, 128, 8))
                         cycled = self.generator.predict(cycle_in)
 
@@ -211,8 +242,8 @@ class Network:
                         plt.imsave(buf, image_out)
                         images = tf.Summary.Image(encoded_image_string = buf.getvalue())
 
-                        lbl_img = utility.label_image(train_labels[0], self.image_size)
-                        fake_img = utility.label_image(fake_labels[0], self.image_size)
+                        lbl_img = utility.label_image(train_labels, self.image_size)
+                        fake_img = utility.label_image(fake_labels, self.image_size)
                         labels_image = np.concatenate((lbl_img, fake_img), axis = 0)
                         
                         buf = BytesIO()
@@ -220,7 +251,7 @@ class Network:
                         labels_image = tf.Summary.Image(encoded_image_string = buf.getvalue())
 
                         summary = tf.Summary(value = [tf.Summary.Value(tag = "in -> out -> cycled", image = images),
-                                                    tf.Summary.Value(tag = "labels (real / fake)", image = labels_image)])
+                                                    tf.Summary.Value(tag = "labels (top = real / bottom = fake)", image = labels_image)])
                         tbcallback.writer.add_summary(summary, (epoch * self.iterations) + step)
                         tbcallback.writer.flush()
                         
@@ -240,10 +271,12 @@ class Network:
                         fake_src = np.zeros((self.batch_size, 2, 2, 1))
                         real_src = np.ones((self.batch_size, 2, 2, 1))
 
+                        interpolation = self.learning_rate * (train_images) + (1 - self.learning_rate) * fake
+
                         d_logs = self.discriminator_model.train_on_batch \
                         (
-                            [train_images, fake],
-                            [fake_src, real_src, train_labels]
+                            [train_images, fake, interpolation],
+                            [fake_src, real_src, train_labels, np.ones(self.batch_size)]
                         )
 
                     tiled_original_labels = utility.generate_batch_labels(train_labels, self.image_size)
