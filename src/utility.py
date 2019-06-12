@@ -2,8 +2,7 @@ import cv2
 import os
 import numpy as np
 import tensorflow as tf
-import tensorflow.keras.backend as backend
-from tensorflow.python.keras.layers import Layer
+import keras.backend as backend
 import matplotlib.pylab as plt
 from random import randint
 

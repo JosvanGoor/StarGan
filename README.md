@@ -4,10 +4,14 @@ Stargan for CelebA. A Deep Learning practical
 Keras implementation based on 
 https://github.com/taki0112/StarGAN-Tensorflow
 
+## Dependencies:
+* tensorflow
+* keras
+* keras_contrib
+* matplotlib
+* numpy
+* tqdm
+
 # Notes:
 
-# Todo:
-* Implement loss functions
-* Labels:
-    * Check wether they place correctly
-* Simplify build_model function
+

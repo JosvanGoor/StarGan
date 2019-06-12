@@ -1,5 +1,5 @@
 import numpy as np
-from src.instancenormalization import InstanceNormalization
+from keras_contrib.layers import InstanceNormalization
 from keras.layers import Input, Conv2D, Conv2DTranspose, LeakyReLU, Add, Activation
 import keras
 

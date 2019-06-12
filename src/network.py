@@ -173,7 +173,7 @@ class Network:
         self.combined_model.compile \
         (
             loss = ["mae", loss.negative_mean_loss, loss.classification_loss],
-            loss_weights = [self.reconstruction_weight, self.classification_weight, self.adverserial_weight],
+            loss_weights = [self.reconstruction_weight, self.classification_weight + 5, self.adverserial_weight],
             optimizer = self.gen_optimizer
         )
 
@@ -184,16 +184,21 @@ class Network:
         norm = GradNorm()([self.discriminator(interpolation)[0], interpolation])
         fake_output_src, fake_output_cls = self.discriminator(fake_input)
         real_output_src, real_output_cls = self.discriminator(real_input)
-        self.discriminator_model = Model([real_input, fake_input, interpolation], [fake_output_src, real_output_src, real_output_cls, norm])
+        self.discriminator_model = Model \
+        (
+            [real_input, fake_input, interpolation],
+            [fake_output_src, real_output_src, real_output_cls, norm],
+            name = "connected discriminator"
+        )
         
         print("Discriminator model:")
         self.discriminator_model.summary()
         
         self.discriminator_model.compile \
         (
-            loss=[loss.mean_loss, loss.negative_mean_loss, loss.classification_loss, "mse"],
+            loss = [loss.mean_loss, loss.negative_mean_loss, loss.classification_loss, "mse"],
             loss_weights = [1, 1, self.classification_weight, self.gradient_penalty],
-            optimizer= self.dis_optimizer
+            optimizer = self.dis_optimizer
         )
     
     '''
