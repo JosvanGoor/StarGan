@@ -1,11 +1,14 @@
 import json
 import keras
+import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pickle
 import src.loss as loss
 import src.utility as util
+import tensorflow as tf
 
+from io import BytesIO
 from keras.layers import Concatenate, Input
 from keras.models import Model
 from keras.optimizers import Adam
@@ -95,7 +98,7 @@ class Network:
         self.store_optimizer(self.discriminator_model, os.path.join(folder, self.discriminator_optimizer_file))
 
         # Store arguments
-        with open("arguments.json", "w") as file:
+        with open(os.path.join(folder, "arguments.json"), "w") as file:
             file.write(self.arguments)
     
     '''
@@ -204,7 +207,7 @@ class Network:
 
                     # With log_delay intervals write log
                     if current_step % self.log_delay == 0:
-                        self.write_tensorboard_image()
+                        self.write_tensorboard_image(tbcallback, current_step)
 
                     for _ in range(0, self.critics):
                         try:
@@ -240,5 +243,73 @@ class Network:
                     util.write_log(tbcallback, gen_names, gen_logs[1:4], current_step)
                     util.write_log(tbcallback, dis_names, [dis_logs[1]+dis_logs[2]] +dis_logs[3:5], current_step)
 
-    def write_tensorboard_image(self):
-        pass
+    def write_tensorboard_image(self, callback, step):
+        image, train_label, fake_labels = self.image_data.get_validation_image()
+
+        labels = util.generate_label_layers(fake_labels, self.image_size)
+        combined = np.append(image, labels, axis = 2)
+        generator_out = self.generator.predict(np.reshape(combined, (1, self.image_size, self.image_size, 3 + self.num_labels)))
+
+        cycle_in = np.reshape(generator_out, (128, 128, 3))
+        cycle_in = np.append(cycle_in, util.generate_label_layers(train_label, self.image_size), axis = 2)
+        cycle_in = np.reshape(cycle_in, (1, self.image_size, self.image_size, 3 + self.num_labels))
+        cycled = self.generator.predict(cycle_in)
+
+        image_out = np.concatenate \
+        (
+            (
+                image,
+                generator_out.reshape((self.image_size, self.image_size, 3,)),
+                cycled.reshape((self.image_size, self.image_size, 3,)),
+            ),
+            axis = 1
+        )
+
+        image_out = util.normalize_image(image_out)
+        buf = BytesIO()
+        plt.imsave(buf, image_out)
+        tb_image = tf.Summary.Image(encoded_image_string = buf.getvalue())
+
+        label_image = util.label_image(train_label, self.image_size)
+        fakelbl_image = util.label_image(fake_labels, self.image_size)
+        labels_image = np.concatenate((label_image, fakelbl_image), axis = 0)
+        
+        buf = BytesIO()
+        plt.imsave(buf, labels_image)
+        tb_labels = tf.Summary.Image(encoded_image_string = buf.getvalue())
+
+        summary = tf.Summary \
+        (
+            value = \
+            [
+                tf.Summary.Value(tag = "in -> out -> cycled", image = tb_image),
+                tf.Summary.Value(tag = "labels, (top: real): {}".format(self.selected_labels), image = tb_labels)
+            ]
+        )
+        
+        callback.writer.add_summary(summary, step)
+        callback.writer.flush()
+
+def restore_network(arguments):
+    restore_epoch = arguments.start_epoch
+
+    if arguments.restore_arguments: # overwrite arguments with old arguments
+        argfile = os.path.join(arguments.checkpoint_dir, "checkpoint_epoch_{}".format(restore_epoch), "arguments.json")
+        args = None
+        with open(argfile) as file: args = json.load(file)
+        arguments.__dict__.update(args) # this is so fucking ugly I cant even.
+
+    # Generate network stuffs
+    network = Network(arguments)
+    network.start_epoch = restore_epoch
+    network.build()
+
+    # now restore the data
+    folder = os.path.join(network.checkpoint_dir, network.checkpoint_name.format(network.start_epoch))
+
+    network.combined_model.load_weights(os.path.join(folder, network.weights_file))
+    network.load_optimizer(network.combined_model, os.path.join(folder, network.combined_optimizer_file))
+    network.load_optimizer(network.discriminator_model, os.path.join(folder, network.discriminator_optimizer_file))
+
+    return network
+

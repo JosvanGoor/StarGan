@@ -67,10 +67,10 @@ def color_image(imsize, color = (1.0, 1.0, 1.0)):
     Returns tensorboard label image
 '''
 def label_image(labels, imsize):
-    image = color_image(imsize, (1.0, 0, 0)) if labels[0] == 0 else color_image(imsize, color(0.0, 1.0, 0.0))
+    image = color_image(imsize, (1.0, 0, 0)) if labels[0] == 0 else color_image(imsize, (0.0, 1.0, 0.0))
 
     for idx in range(1, len(labels)):
-        bolt = color_image(imsize, (1.0, 0, 0)) if labels[idx] == 0 else color_image(imsize, color(0.0, 1.0, 0.0))
+        bolt = color_image(imsize, (1.0, 0, 0)) if labels[idx] == 0 else color_image(imsize, (0.0, 1.0, 0.0))
         image = np.concatenate((image, bolt), axis = 1)
 
     return image

@@ -2,7 +2,7 @@
 data/
 logs/
 models/
-checkpoint/
+checkpoints/
 
 # python stuff
 **/__pycache__/
