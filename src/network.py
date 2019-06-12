@@ -149,7 +149,7 @@ class Network:
         self.combined_model.compile \
         (
             loss = ["mae", loss.negative_mean_loss, loss.classification_loss],
-            loss_weights = [self.rec_weight, 1, self.adv_weight],
+            loss_weights = [self.rec_weight, 1, self.cls_weight],
             optimizer = Adam(lr = self.gen_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
         )
 
@@ -176,8 +176,8 @@ class Network:
 
         self.discriminator_model.compile \
         (
-            loss = [loss.negative_mean_loss, loss.mean_loss, loss.classification_loss, "mse"],
-            loss_weights = [1, self.cls_weight, self.rec_weight, self.grad_pen],
+            loss = [loss.mean_loss, loss.classification_loss, loss.negative_mean_loss, "mse"],
+            loss_weights = [1, self.cls_weight, 1, self.grad_pen],
             optimizer = Adam(lr = self.dis_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
         )
 
@@ -224,7 +224,7 @@ class Network:
                         fake_src = np.zeros((self.batch_size, 2, 2, 1))
                         real_src = np.ones((self.batch_size, 2, 2, 1))
 
-                        interpolation = (self.dis_lr * train_images) + 1 - self.dis_lr * fake_images
+                        interpolation = (self.dis_lr * train_images) + 1 - (self.dis_lr * fake_images)
 
                         dis_logs = self.discriminator_model.train_on_batch \
                         (
@@ -240,8 +240,8 @@ class Network:
                         [train_images, fake_src, fake_label_layers]
                     )
 
-                    util.write_log(tbcallback, gen_names, gen_logs[1:4], current_step)
-                    util.write_log(tbcallback, dis_names, [dis_logs[1]+dis_logs[2]] +dis_logs[3:5], current_step)
+                    util.write_log(tbcallback, gen_names, gen_logs, current_step)
+                    util.write_log(tbcallback, dis_names, dis_logs, current_step)
 
     def write_tensorboard_image(self, callback, step):
         image, train_label, fake_labels = self.image_data.get_validation_image()
