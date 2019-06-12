@@ -1,11 +1,14 @@
 import csv
 import numpy as np
-from random import shuffle
-from tqdm import tqdm
-from math import floor
-from src.utility import read_image
-from random import randint
 
+from math import floor
+from random import randint, shuffle
+from src.utility import read_image
+from tqdm import tqdm
+
+'''
+    CelebA's hair color tags
+'''
 POSSIBLE_HAIR_COLORS = ["Black_Hair", "Blond_Hair", "Brown_Hair", "Gray_Hair"]
 
 class ImageData:

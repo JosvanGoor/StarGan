@@ -1,79 +1,47 @@
-import argparse
 import os
-from src.network import Network
-from src.imagedata import ImageData
 
-"""parsing and configuration"""
+from argparse import ArgumentParser
+
+def check_directory(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+'''
+    if run from this file, parse the configuration
+'''
 if __name__ == "__main__":
-    desc = "Tensorflow implementation of StarGAN"
-    parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument('--phase', type=str, default='train', help='train or test ?')
-    parser.add_argument('--dataset', type=str, default='data', help='dataset_name')
+    parser = ArgumentParser(description = "Keras implementation of StarGan")
 
-    parser.add_argument('--epoch', type=int, default=200, help='The number of epochs to run')
-    parser.add_argument('--iteration', type=int, default=1000, help='The number of training iterations')
-    parser.add_argument('--batch_size', type=int, default=16, help='The size of batch size')
-    parser.add_argument('--print_freq', type=int, default=1000, help='The number of image_print_freq')
-    parser.add_argument('--save_freq', type=int, default=1000, help='The number of ckpt_save_freq')
-    parser.add_argument('--decay_flag', type=lambda x: x.lower() == "true", default=True, help='The decay_flag')
-    parser.add_argument('--decay_epoch', type=int, default=10, help='decay epoch')
+    # General arguments
+    parser.add_argument("--image_size", type = int, default = 128, help = "Image size")
+    parser.add_argument("--selected_labels", type = str, nargs = "+", help = "Selected attributes for training",
+                        default = ["Blond_Hair", "Brown_Hair", "Black_Hair", "Male", "Young"])
+    
+    # Training / network parameters
+    parser.add_argument("--adv_weight", type = float, default = 1.0, help = "Adverserial weight")
+    parser.add_argument("--batch_size", type = int, default = 16, help = "Training batch size")
+    parser.add_argument("--cls_weight", type = float, default = 10, help = "Classification weight")
+    parser.add_argument("--beta_1", type = float, default = 0.9, help = "Beta1 for Adam optimizer")
+    parser.add_argument("--beta_2", type = float, default = 0.999, help = "Beta2 for Adam optimizer")
+    parser.add_argument("--dis_hidden", type = int, default = 5, help = "Number of hidden layers in discriminator")
+    parser.add_argument("--dis_lr", type = float, default = 0.0001, help = "Discriminator learning rate")
+    parser.add_argument("--gen_lr", type = float, default = 0.0001, help = "Generator learning rate")
+    parser.add_argument("--gen_residuals", type = int, default = 6, help = "Number of residual layers for generator")
+    parser.add_argument("--grad_pen", type = float, default = 10.0, help = "Discriminator's gradient penalty")
+    parser.add_argument("--leakyness", type = float, default = 0.01, help = "LeakyReLU leak rate")
+    parser.add_argument("--rec_weight", type = float, default = 10.0, help = "Reconstruction weight")
 
-    parser.add_argument('--lr', type=float, default=0.0001, help='The learning rate')
-    parser.add_argument('--ld', type=float, default=10.0, help='The gradient penalty lambda')
-    parser.add_argument('--adv_weight', type=float, default=1, help='Weight about GAN')
-    parser.add_argument('--rec_weight', type=float, default=10, help='Weight about Reconstruction')
-    parser.add_argument('--cls_weight', type=float, default=10, help='Weight about Classification')
-
-    parser.add_argument('--gan_type', type=str, default='wgan-gp', help='gan / lsgan / wgan-gp / wgan-lp / dragan / hinge')
-    parser.add_argument('--selected_attrs', type=str, nargs='+', help='selected attributes for the CelebA dataset',
-                        default=['Black_Hair', 'Blond_Hair', 'Brown_Hair', 'Male', 'Young'])
-
-    parser.add_argument('--custom_label', type=int, nargs='+', help='custom label about selected attributes',
-                        default=[1, 0, 0, 0, 0])
-    # If your image is "Young, Man, Black Hair" = [1, 0, 0, 1, 1]
-
-    parser.add_argument('--ch', type=int, default=64, help='base channel number per layer')
-    parser.add_argument('--n_res', type=int, default=6, help='The number of resblock')
-    parser.add_argument('--n_dis', type=int, default=5, help='The number of discriminator layer')
-    parser.add_argument('--n_critic', type=int, default=5, help='The number of critic')
-
-    parser.add_argument('--img_size', type=int, default=128, help='The size of image')
-    parser.add_argument('--img_ch', type=int, default=3, help='The size of image channel')
-    parser.add_argument('--augment_flag', type=lambda x: x.lower() == "true", default=True, help='Image augmentation use or not')
-
-    parser.add_argument("--restore_epoch", type=int, default = -1, help = "Epoch to restore from")
-
-    parser.add_argument('--checkpoint_dir', type=str, default='checkpoint',
-                        help='Directory name to save the checkpoints')
-    parser.add_argument('--result_dir', type=str, default='results',
-                        help='Directory name to save the generated images')
-    parser.add_argument('--log_dir', type=str, default='logs',
-                        help='Directory name to save training logs')
-    parser.add_argument('--sample_dir', type=str, default='samples',
-                        help='Directory name to save the samples on training')
-    parser.add_argument("--model_dir", type=str, default="models",
-                        help="Model save directory")
+    # Folder parameters
+    parser.add_argument("--checkpoint_dir", type = str, default = "checkpoints", help = "Checkpoint save folder")
+    parser.add_argument("--data_dir", type = str, default = "data", help = "Location of CelebA folder")
+    parser.add_argument("--log_dir", type = str, default = "logs", help = "Logs folder (for tensorboard)")
+    parser.add_argument("--model_dir", type = str, default = "models", help = "Completed model folder")
 
     arguments = parser.parse_args()
 
-    # Create directories if not exist.
-    if not os.path.exists(arguments.log_dir):
-        os.makedirs(arguments.log_dir)
-    if not os.path.exists(arguments.model_dir):
-        os.makedirs(arguments.model_dir)
-    if not os.path.exists(arguments.sample_dir):
-        os.makedirs(arguments.sample_dir)
-    if not os.path.exists(arguments.result_dir):
-        os.makedirs(arguments.result_dir)
-    if not os.path.exists(arguments.checkpoint_dir):
-        os.makedirs(arguments.checkpoint_dir)
+    # verify required folders exist
+    check_directory(arguments.checkpoint_dir)
+    check_directory(arguments.log_dir)
+    check_directory(arguments.model_dir)
 
-    network = Network(arguments)
-    network.build()
-
-    if not arguments.restore_epoch == -1:
-        network.restore_network(arguments.restore_epoch)
-
-    network.train()
-
-# imgd = ImageData("data/", "data/list_attr_celeba.csv", 128, 16)
+    # build network
