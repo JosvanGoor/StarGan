@@ -4,7 +4,26 @@ import numpy as np
 import tensorflow as tf
 import keras.backend as backend
 import matplotlib.pylab as plt
+from keras.engine.topology import Layer
 from random import randint
+
+class GradNorm(Layer):
+    def __init__(self, **kwargs):
+        super(GradNorm, self).__init__(**kwargs)
+
+    def build(self, input_shapes):
+        super(GradNorm, self).build(input_shapes)
+
+    def call(self, inputs):
+        target, wrt = inputs
+        grads = tf.keras.backend.gradients(target, wrt)
+        assert len(grads) == 1
+        grad = grads[0]
+        grad_norm = tf.norm(tf.layers.flatten(grad))
+        return grad_norm
+
+    def compute_output_shape(self, input_shapes):
+        return (input_shapes[1][0], 1)
 
 def normalize_image(image):
     return (image - image.min()) / np.ptp(image)

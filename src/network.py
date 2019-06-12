@@ -7,7 +7,6 @@ import tensorflow as tf
 from keras.optimizers import Adam
 from keras.layers import Input, Concatenate
 from keras.models import Model
-from keras.engine.topology import Layer
 import keras
 from tqdm import trange
 import numpy as np
@@ -17,7 +16,6 @@ import pickle
 import src.loss as loss
 
 def write_log(callback, names, logs, batch_no):
-    # pylint: disable (no-member)
     for name, value in zip(names, logs):
         summary = tf.Summary()
         summary_value = summary.value.add()
@@ -25,24 +23,6 @@ def write_log(callback, names, logs, batch_no):
         summary_value.tag = name
         callback.writer.add_summary(summary, batch_no)
         callback.writer.flush()
-
-class GradNorm(Layer):
-    def __init__(self, **kwargs):
-        super(GradNorm, self).__init__(**kwargs)
-
-    def build(self, input_shapes):
-        super(GradNorm, self).build(input_shapes)
-
-    def call(self, inputs):
-        target, wrt = inputs
-        grads = tf.keras.backend.gradients(target, wrt)
-        assert len(grads) == 1
-        grad = grads[0]
-        grad_norm = tf.norm(tf.layers.flatten(grad))
-        return grad_norm
-
-    def compute_output_shape(self, input_shapes):
-        return (input_shapes[1][0], 1)
 
 class Network:
 
@@ -80,7 +60,7 @@ class Network:
         self.log_dir = arguments.log_dir
         self.sample_dir = arguments.sample_dir
         self.starter_epoch = 0
-        self.log_delay = 25
+        self.log_delay = 100
 
         self.model_foldername = "checkpoint_epoch_{}"
         self.weights_file = "weights.h5"
@@ -183,7 +163,7 @@ class Network:
         self.discriminator.trainable = True
         shape = (self.image_size, self.image_size, 3)
         fake_input, real_input, interpolation = Input(shape), Input(shape), Input(shape)
-        norm = GradNorm()([self.discriminator(interpolation)[0], interpolation])
+        norm = utility.GradNorm()([self.discriminator(interpolation)[0], interpolation])
         fake_output_src, fake_output_cls = self.discriminator(fake_input)
         real_output_src, real_output_cls = self.discriminator(real_input)
         self.discriminator_model = Model \
@@ -220,10 +200,9 @@ class Network:
             # this helps with restoring contrib layers using tensorflow layers.
             session.run(keras.backend.tf.global_variables_initializer())
 
-            print("Starting at epoch {} / {}".format(self.starter_epoch, self.epochs))
-            for epoch in trange(self.starter_epoch, self.epochs, desc = "Epochs"):
+            for epoch in trange(0, self.epochs, initial = self.starter_epoch, desc = "Epochs"):
                 # Store once per epoch
-                if not epoch == 0 or not self.starter_epoch == epoch:
+                if not self.starter_epoch == epoch:
                     self.store_network(epoch)
 
                 for step in trange(self.iterations, desc = "Iterations"):
