@@ -8,6 +8,7 @@ from keras.optimizers import Adam
 from keras.layers import Input, Concatenate
 from keras.models import Model
 from keras.engine.topology import Layer
+import keras
 from tqdm import trange
 import numpy as np
 from io import BytesIO
@@ -16,6 +17,7 @@ import pickle
 import src.loss as loss
 
 def write_log(callback, names, logs, batch_no):
+    # pylint: disable (no-member)
     for name, value in zip(names, logs):
         summary = tf.Summary()
         summary_value = summary.value.add()
@@ -214,7 +216,10 @@ class Network:
         batch_iterator = iter(self.image_data)
         batch_idx = 0
 
-        with tf.keras.backend.get_session().as_default():
+        with tf.keras.backend.get_session().as_default() as session:
+            # this helps with restoring contrib layers using tensorflow layers.
+            session.run(keras.backend.tf.global_variables_initializer())
+
             print("Starting at epoch {} / {}".format(self.starter_epoch, self.epochs))
             for epoch in trange(self.starter_epoch, self.epochs, desc = "Epochs"):
                 # Store once per epoch
@@ -222,9 +227,10 @@ class Network:
                     self.store_network(epoch)
 
                 for step in trange(self.iterations, desc = "Iterations"):
+                    curstep = (self.iterations * epoch) + step
+
                     # Output tensorflow image
-                    if step % self.log_delay == 0:
-                        curstep = (self.iterations * epoch) + step
+                    if curstep % self.log_delay == 0:
                         train_images, train_labels, fake_labels = self.image_data.get_validation_image()
 
                         image = train_images
@@ -257,7 +263,7 @@ class Network:
 
                         summary = tf.Summary(value = [tf.Summary.Value(tag = "in -> out -> cycled", image = images),
                                                     tf.Summary.Value(tag = "labels (top = real, bottom = fake): {}".format(self.selected_attributes), image = labels_image)])
-                        tbcallback.writer.add_summary(summary, (epoch * self.iterations) + step)
+                        tbcallback.writer.add_summary(summary, curstep)
                         tbcallback.writer.flush()
                         
                     # 0 - critics
