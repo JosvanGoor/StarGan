@@ -13,5 +13,5 @@ https://github.com/taki0112/StarGAN-Tensorflow
 * tqdm
 
 # Notes:
-
-
+* Dubbelcheck of alle loss functions en weights de output layers matchen
+* Dubbelcheck hoe de write summary werkt
