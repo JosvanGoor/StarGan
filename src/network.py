@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pickle
+import signal
 import src.loss as loss
 import src.utility as util
 import tensorflow as tf
@@ -71,6 +72,10 @@ class Network:
         self.combined_optimizer_file = "combined_optimizer.pkl"
         self.discriminator_optimizer_file = "discriminator_optimizer.pkl"
 
+        # signal catched flag
+        self.quit_signalled = False
+        signal.signal(signal.SIGINT, self.signal_handler)
+
     '''
         Store / load the network. Store always goes to checkpoint.
         Load function is non-member
@@ -102,6 +107,16 @@ class Network:
             file.write(self.arguments)
     
     '''
+        Ctrl+C signal handler for gracefull shutdown
+    '''
+    def signal_handler(self, sig, frame):
+        print("************************************")
+        print("*      Ctrl + C Signal caught      *")
+        print("* Stopping after current iteration *")
+        print("************************************")
+        self.quit_signalled = True
+
+    '''
         Builds the model, this is required even when restoring the model
     '''
     def build(self):
@@ -121,6 +136,11 @@ class Network:
             self.leakyness
         )
         
+        print("Generator:")
+        self.generator.summary()
+        print("Discriminator:")
+        self.discriminator.summary()
+        
         ##
         # Create combined model, discriminator does NOT get trained here.
         ##
@@ -138,7 +158,7 @@ class Network:
         # input layer for generated fake image, and origninal labels
         cycle_input = Concatenate(axis = 3)([generator_fake_output, real_labels])
         reconstructed_image = self.generator(cycle_input)
-
+        
         self.combined_model = Model \
         (
             inputs = [real_image, real_labels, fake_labels],
@@ -181,6 +201,11 @@ class Network:
             optimizer = Adam(lr = self.dis_lr, beta_1 = self.beta_1, beta_2 = self.beta_2)
         )
 
+        print("Combined model:")
+        self.combined_model.summary(line_length = 200)
+        print("Discriminator model:")
+        self.discriminator_model.summary(line_length = 200)
+
     '''
         Train model
     '''
@@ -205,6 +230,10 @@ class Network:
                 for step in trange(self.iterations, desc = "Iterations"):
                     current_step = (self.iterations * epoch) + step
 
+                    # if ctrl+c has been signalled, stop running
+                    if self.quit_signalled:
+                        return
+
                     # With log_delay intervals write log
                     if current_step % self.log_delay == 0:
                         self.write_tensorboard_image(tbcallback, current_step)
@@ -224,7 +253,7 @@ class Network:
                         fake_src = np.zeros((self.batch_size, 2, 2, 1))
                         real_src = np.ones((self.batch_size, 2, 2, 1))
 
-                        interpolation = (self.dis_lr * train_images) + 1 - (self.dis_lr * fake_images)
+                        interpolation = (self.dis_lr * train_images) + ((1 - self.dis_lr) * fake_images)
 
                         dis_logs = self.discriminator_model.train_on_batch \
                         (
@@ -237,11 +266,14 @@ class Network:
                     gen_logs = self.combined_model.train_on_batch \
                     (
                         [train_images, original_label_layers, fake_label_layers],
-                        [train_images, fake_src, fake_label_layers]
+                        [train_images, fake_src, fake_labels]
                     )
 
-                    util.write_log(tbcallback, gen_names, gen_logs, current_step)
-                    util.write_log(tbcallback, dis_names, dis_logs, current_step)
+                    # print("len gen_logs: {}".format(gen_logs))
+                    # print("gen metric names size: {}".format(self.combined_model.metrics_names))
+
+                    util.write_log(tbcallback, gen_names, gen_logs[1:], current_step)
+                    util.write_log(tbcallback, dis_names, dis_logs[1:], current_step)
 
     def write_tensorboard_image(self, callback, step):
         image, train_label, fake_labels = self.image_data.get_validation_image()
